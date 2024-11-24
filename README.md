@@ -9,15 +9,10 @@
   - [1. Setup](#1-setup)
   - [2. Bastion](#2-bastion)
   - [3. Connexion par clé](#3-connexion-par-clé)
-  - [4. Conf serveur SSH](#4-conf-serveur-ssh)
 - [III. HTTP](#iii-http)
   - [1. Initial setup](#1-initial-setup)
   - [2. Génération de certificat et HTTPS](#2-génération-de-certificat-et-https)
-    - [A. Préparation de la CA](#a-préparation-de-la-ca)
-    - [B. Génération du certificat pour le serveur web](#b-génération-du-certificat-pour-le-serveur-web)
-    - [C. Bonnes pratiques RedHat](#c-bonnes-pratiques-redhat)
-    - [D. Config serveur Web](#d-config-serveur-web)
-    - [E. Bonus renforcement TLS](#e-bonus-renforcement-tls)
+
 
 # I. VPN
 
@@ -76,6 +71,15 @@ sudo firewall-cmd --zone=public --add-interface=wg0 --permanent
 sudo firewall-cmd --reload
 sudo sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
 sudo setenforce 0
+
+# Si configuration SSL
+# Changer dans le Service :
+# ExecStart=/home/$USER/WGDashboard/src/venv/bin/gunicorn --config /home/$USER/WGDashboard/src/gunicorn.conf.py --certfile=/etc/ssl/certs/wgd.crt --keyfile=/etc/ssl/private/wgd.key
+
+#echo "Configuration du Certificat SSL"
+
+#sudo mkdir -p /etc/ssl/private /etc/ssl/certs
+#sudo openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/ssl/private/wgd.key -out /etc/ssl/certs/wgd.crt
 
 # Service WGDashboard
 
@@ -179,7 +183,7 @@ DNS = 1.1.1.1
 
 [Peer]
 PublicKey = $server_pubkey
-Endpoint = 85.215.241.87:51820
+Endpoint = IP_SERVER:51820
 AllowedIPs = 0.0.0.0/0
 EOL
 
@@ -224,13 +228,32 @@ done
 
 🌞 **Empêcher la connexion SSH directe sur `web.tp7.secu`**
 
-PareFeu IONOS
+Pare-Feu IONOS pour avoir un moyen de backup
 
 🌞 **Connectez-vous avec un jump SSH**
 
-- en une seule commande, vous avez un shell sur `web.tp7.secu`
+```bash
+stan@Stanislass-MacBook-Pro-2 ~ % ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa_plex
+```
 
-> Désormais, le bastion centralise toutes les connexions SSH. Il devient un noeud très important dans la gestion du parc, et permet à lui seul de tracer toutes les connexions SSH effectuées.
+```bash
+stan@Stanislass-MacBook-Pro-2 ~ % ssh-copy-id -i ~/.ssh/id_rsa_plex.pub plex@10.0.0.5
+```
+
+```bash
+stan@Stanislass-MacBook-Pro-2 ~ % sudo vi ~/.ssh/config
+Host plex
+    HostName 10.0.0.5
+    User plex
+    IdentityFile ~/.ssh/id_rsa_plex
+    ProxyJump vpn@10.0.0.1
+```
+
+```bash
+stan@Stanislass-MacBook-Pro-2 ~ % ssh plex             
+Last login: Sun Nov 24 16:12:08 2024 from 10.0.0.1
+[plex@server ~]$ 
+```
 
 ## 3. Connexion par clé
 
@@ -244,145 +267,99 @@ stan@Stanislass-MacBook-Pro-2 ~ % ssh-keygen -t rsa -b 4096
 stan@Stanislass-MacBook-Pro-2 ~ % ssh-copy-id -i ~/.ssh/id_rsa.pub vpn@10.0.0.1
 ```
 
-## 4. Conf serveur SSH
-
-🌞 **Améliorer le niveau de sécurité du serveur**
-
-- sur toutes les machines
-- mettre en oeuvre au moins 3 configurations additionnelles pour améliorer le niveau de sécurité
-- 3 lignes (au moins) à changer quoi
-- le doc est vieux, mais en dehors des recommendations pour le chiffrement qui sont obsolètes, le reste reste très cool : [l'ANSSI avait édité des recommendations pour une conf OpenSSH](https://cyber.gouv.fr/publications/openssh-secure-use-recommendations)
-
 # III. HTTP
 
 ## 1. Initial setup
 
 🌞 **Monter un bête serveur HTTP sur `web.tp7.secu`**
 
-- avec NGINX
-- une page d'accueil HTML avec écrit "toto" ça ira
-- **il ne doit écouter que sur l'IP du VPN**
-- une conf minimale ressemble à ça :
-
-```nginx
-server {
-    server_name web.tp7.secu;
-
-    listen 10.1.1.1:80;
-
-    # vous collez un ptit index.html dans ce dossier et zou !
-    root /var/www/site_nul;
-}
-```
+WGDashboard
 
 🌞 **Site web joignable qu'au sein du réseau VPN**
 
-- le site web ne doit écouter que sur l'IP du réseau VPN
-- le trafic à destination du port 80 n'est autorisé que si la requête vient du réseau VPN (firewall)
-- prouvez qu'il n'est pas possible de joindre le site sur son IP host-only
+Pare-Feu IONOS pour avoir un moyen de backup
 
 🌞 **Accéder au site web**
 
-- depuis votre PC, avec un `curl`
-- vous êtes normalement obligés d'être co au VPN pour accéder au site
-
-## 2. Génération de certificat et HTTPS
-
-### A. Préparation de la CA
-
-On va commencer par générer la clé et le certificat de notre Autorité de Certification (CA). Une fois fait, on pourra s'en servir pour signer d'autres certificats, comme celui de notre serveur web.
-
-Pour que la connexion soit trusted, il suffira alors d'ajouter le certificat de notre CA au magasin de certificats de votre navigateur sur votre PC.
-
-🌞 **Générer une clé et un certificat de CA**
-
 ```bash
-# mettez des infos dans le prompt, peu importe si c'est fake
-# on va vous demander un mot de passe pour chiffrer la clé aussi
-$ openssl genrsa -des3 -out CA.key 4096
-$ openssl req -x509 -new -nodes -key CA.key -sha256 -days 1024  -out CA.pem
-$ ls
-# le pem c'est le certificat (clé publique)
-# le key c'est la clé privée
+stan@Stanislass-MacBook-Pro-2 ~ % curl 10.0.0.1:10086
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="application-name" content="WGDashboard">
+		<meta name="apple-mobile-web-app-title" content="WGDashboard">
+		<link rel="manifest" href="/static/app/dist/json/manifest.json">
+		<link rel="icon" href="/static/app/dist/favicon.png">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>WGDashboard</title>
+		<script type="module" crossorigin src="/static/app/dist/assets/index-DeLT-ag4.js"></script>
+		<link rel="stylesheet" crossorigin href="/static/app/dist/assets/index-D2eeEsuX.css">
+	</head>
+	<body>
+		<div id="app"></div>
+	</body>
+</html>%
 ```
 
-### B. Génération du certificat pour le serveur web
-
-Il est temps de générer une clé et un certificat que notre serveur web pourra utiliser afin de proposer une connexion HTTPS.
+## 2. Génération de certificat et HTTPS
 
 🌞 **Générer une clé et une demande de signature de certificat pour notre serveur web**
 
 ```bash
-$ openssl req -new -nodes -out web.tp7.secu.csr -newkey rsa:4096 -keyout web.tp7.secu.key
-$ ls
-# web.tp7.secu.csr c'est la demande de signature
-# web.tp7.secu.key c'est la clé qu'utilisera le serveur web
+sudo mkdir -p /etc/ssl/private /etc/ssl/certs
+
+sudo openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/ssl/private/wgd.key -out /etc/ssl/certs/wgd.crt
 ```
 
-🌞 **Faire signer notre certificat par la clé de la CA**
-
-- préparez un fichier `v3.ext` qui contient :
-
-```ext
-authorityKeyIdentifier=keyid,issuer
-basicConstraints=CA:FALSE
-keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
-subjectAltName = @alt_names
-
-[alt_names]
-DNS.1 = web.tp7.secu
-DNS.2 = www.tp7.secu
-```
-
-- effectuer la demande de signature pour récup un certificat signé par votre CA :
+🌞 **Ajustez la configuration WGDashboard**
 
 ```bash
-$ openssl x509 -req -in web.tp7.secu.csr -CA CA.pem -CAkey CA.key -CAcreateserial -out web.tp7.secu.crt -days 500 -sha256 -extfile v3.ext
-$ ls
-# web.tp7.secu.crt c'est le certificat qu'utilisera le serveur web
+[vpn@vpn ~]$ sudo cat /etc/systemd/system/vpn.service
+[Unit]
+Description=WG Dashboard Gunicorn Service
+After=network.target
+
+[Service]
+Type=forking
+User=root
+Group=root
+WorkingDirectory=/home/vpn/WGDashboard/src
+ExecStart=/home/vpn/WGDashboard/src/venv/bin/gunicorn --config /home/vpn/WGDashboard/src/gunicorn.conf.py --certfile=/etc/ssl/certs/wgd.crt --keyfile=/etc/ssl/private/wgd.key
+Restart=always
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-### C. Bonnes pratiques RedHat
-
-Sur RedHat, il existe un emplacement réservé aux clés et certificats :
-
-- `/etc/pki/tls/certs/` pour les certificats
-  - pas choquant de voir du droit de lecture se balader
-- `/etc/pki/tls/private/` pour les clés
-  - ici, seul le propriétaire du fichier a le droit de lecture
-
-🌞 **Déplacer les clés et les certificats dans l'emplacement réservé**
-
-- gérez correctement les permissions de ces fichiers
-
-### D. Config serveur Web
-
-🌞 **Ajustez la configuration NGINX**
-
-- le site web doit être disponible en HTTPS en utilisant votre clé et votre certificat
-- une conf minimale ressemble à ça :
-
-```nginx
-server {
-    server_name web.tp7.secu;
-
-    listen 10.7.1.103:443 ssl;
-
-    ssl_certificate /etc/pki/tls/certs/web.tp7.secu.crt;
-    ssl_certificate_key /etc/pki/tls/private/web.tp7.secu.key;
-    
-    root /var/www/site_nul;
-}
+```bash
+[vpn@vpn ~]$ sudo systemctl restart vpn
 ```
 
 🌞 **Prouvez avec un `curl` que vous accédez au site web**
 
-- depuis votre PC
-- avec un `curl -k` car il ne reconnaît pas le certificat là
-
-🌞 **Ajouter le certificat de la CA dans votre navigateur**
-
-- vous pourrez ensuite visitez `https://web.tp7.b2` sans alerte de sécurité, et avec un cadenas vert
-- il faut aussi ajouter l'IP de la machine à votre fichier `hosts` pour qu'elle corresponde au nom `web.tp7.b2`
-
-> *En entreprise, c'est comme ça qu'on fait pour qu'un certificat de CA non-public soit trusted par tout le monde : on dépose le certificat de CA dans le navigateur (et l'OS) de tous les PCs. Evidemment, on utilise une technique de déploiement automatisé aussi dans la vraie vie, on l'ajoute pas à la main partout hehe.*
+```bash
+stan@Stanislass-MacBook-Pro-2 ~ % curl -k https://10.0.0.1:10086
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="application-name" content="WGDashboard">
+		<meta name="apple-mobile-web-app-title" content="WGDashboard">
+		<link rel="manifest" href="/static/app/dist/json/manifest.json">
+		<link rel="icon" href="/static/app/dist/favicon.png">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>WGDashboard</title>
+		<script type="module" crossorigin src="/static/app/dist/assets/index-DeLT-ag4.js"></script>
+		<link rel="stylesheet" crossorigin href="/static/app/dist/assets/index-D2eeEsuX.css">
+	</head>
+	<body>
+		<div id="app"></div>
+	</body>
+</html>%
+```

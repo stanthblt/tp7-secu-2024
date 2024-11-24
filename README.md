@@ -46,17 +46,6 @@ cd ./WGDashboard/src
 chmod +x ./wgd.sh
 ./wgd.sh install
 
-echo "Configuration de Forwarding et des règles de pare-feu..."
-
-echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf > /dev/null
-sudo sysctl -p /etc/sysctl.conf
-sudo firewall-cmd --add-port=10086/tcp --permanent
-sudo firewall-cmd --add-port=51820/udp --permanent
-sudo firewall-cmd --add-masquerade --permanent
-sudo firewall-cmd --reload
-sudo sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
-sudo setenforce 0
-
 # Configuration de l'interface wg0
 
 WG_PATH="/etc/wireguard/wg0.conf"
@@ -73,6 +62,20 @@ ListenPort = 51820
 PrivateKey = $PRIVATE_KEY
 
 EOF
+
+# Configuration Forwarding et règles de pare-feu
+
+echo "Configuration de Forwarding et des règles de pare-feu..."
+
+echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf > /dev/null
+sudo sysctl -p /etc/sysctl.conf
+sudo firewall-cmd --add-port=10086/tcp --permanent
+sudo firewall-cmd --add-port=51820/udp --permanent
+sudo firewall-cmd --add-masquerade --permanent
+sudo firewall-cmd --zone=public --add-interface=wg0 --permanent
+sudo firewall-cmd --reload
+sudo sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
+sudo setenforce 0
 
 # Service WGDashboard
 

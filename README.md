@@ -21,6 +21,8 @@ Voir le vraie VPN
 ```bash
 #!/bin/bash
 
+echo "Deploiement Serveur VPN avec Interface WGDashboard"
+
 # Mise à jour
 
 echo "Mise à jour du système..."
